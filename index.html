@@ -1,0 +1,873 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Rubik Tac Toe</title>
+<style>
+  :root{
+    --bg-0:#0b0e13; --bg-1:#11151c; --panel:#161b22cc; --line:#262d36;
+    --ink:#e6edf3; --muted:#8b94a3;
+    --x:#22d3ee;  /* Player 1 */
+    --o:#fbbf24;  /* Player 2 */
+    --good:#34d399; --warn:#f87171;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:var(--sans); color:var(--ink);
+    background:
+      radial-gradient(1100px 720px at 18% -8%, #2c1b52 0%, transparent 55%),
+      radial-gradient(950px 650px at 88% 18%, #103049 0%, transparent 55%),
+      radial-gradient(1200px 820px at 62% 112%, #3a1442 0%, transparent 55%),
+      linear-gradient(180deg, #08061a, #030210 60%, #020108);
+    overflow:hidden; -webkit-user-select:none; user-select:none;
+  }
+  #stage{position:fixed; inset:0; touch-action:none}
+  canvas{display:block; width:100% !important; height:100% !important}
+
+  /* ---- Top bar ---- */
+  header{
+    position:fixed; top:0; left:0; right:0; padding:14px 16px;
+    display:flex; align-items:center; gap:14px; pointer-events:none; z-index:5;
+  }
+  .brand{font-weight:800; letter-spacing:.14em; font-size:13px; color:var(--muted)}
+  .brand b{color:var(--ink)}
+  .spacer{flex:1}
+  button{
+    pointer-events:auto; font-family:var(--mono); font-size:12px; letter-spacing:.06em;
+    color:var(--ink); background:#1b212b; border:1px solid var(--line);
+    padding:8px 12px; border-radius:10px; cursor:pointer; transition:.15s border-color, .15s background;
+  }
+  button:hover{border-color:#3a4350; background:#212834}
+  button:active{transform:translateY(1px)}
+
+  /* ---- Turn card ---- */
+  #turn{
+    position:fixed; left:50%; top:54px; transform:translateX(-50%);
+    background:var(--panel); border:1px solid var(--line); backdrop-filter:blur(8px);
+    border-radius:14px; padding:10px 16px; text-align:center; z-index:5; pointer-events:none;
+    min-width:248px;
+  }
+  #who{display:flex; align-items:center; justify-content:center; gap:10px; font-weight:700; font-size:15px}
+  #glyph{
+    width:24px; height:24px; border-radius:7px; display:grid; place-items:center;
+    font-family:var(--mono); font-weight:800; font-size:15px; color:#0b0e13;
+  }
+  #phase{margin-top:4px; font-family:var(--mono); font-size:11.5px; letter-spacing:.04em; color:var(--muted)}
+  #phase .k{color:var(--ink)}
+
+  /* ---- Tap arrows around the cube ---- */
+  #arrows{position:fixed; inset:0; z-index:6; pointer-events:none}
+  #arrows.off .arrow{opacity:.18; pointer-events:none}
+  .arrow{
+    position:absolute; width:38px; height:38px; margin:-19px 0 0 -19px;
+    display:grid; place-items:center; pointer-events:auto; cursor:pointer;
+    font-size:20px; line-height:1; color:#dfe7f1;
+    background:#161b22cc; border:1px solid #2c3542; border-radius:11px;
+    backdrop-filter:blur(6px); transition:transform .1s, background .12s, opacity .15s, border-color .12s;
+    -webkit-tap-highlight-color:transparent; user-select:none;
+  }
+  .arrow:hover{background:#222a36; border-color:#3c4757; color:#fff}
+  .arrow:active{transform:scale(.88)}
+  .arrow.slice{border-style:dashed; color:#aeb9c8}
+
+  /* ---- Controls hint (top, under the turn card) ---- */
+  #hint{
+    position:fixed; left:50%; top:118px; transform:translateX(-50%);
+    display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
+    font-family:var(--mono); font-size:11px; color:var(--muted); z-index:5; pointer-events:none;
+    padding:0 12px; text-align:center;
+  }
+  #hint b{color:#c2cbd6; font-weight:600}
+
+  /* ---- Win overlay ---- */
+  #over{
+    position:fixed; inset:0; display:none; place-items:center; z-index:10;
+    background:radial-gradient(800px 500px at 50% 40%, #0b0e13aa, #0b0e13ee);
+    backdrop-filter:blur(3px);
+  }
+  #over.show{display:grid; animation:fade .35s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:18px;
+    padding:30px 34px; text-align:center; max-width:90vw;
+  }
+  .card .res{font-size:26px; font-weight:800; letter-spacing:.01em}
+  .card .sub{margin-top:8px; color:var(--muted); font-family:var(--mono); font-size:12.5px}
+  .card button{margin-top:20px; padding:11px 18px; font-size:13px}
+
+  @media (max-width:520px){
+    .brand{font-size:11px}
+    #hint{gap:12px}
+  }
+</style>
+
+<div id="stage"></div>
+
+<header>
+  <div class="brand"><b>RUBIK</b> TAC TOE</div>
+  <div class="spacer"></div>
+  <button id="mode">VS&nbsp;AI</button>
+  <button id="new">NEW GAME</button>
+</header>
+
+<div id="turn">
+  <div id="who"><span id="glyph">X</span><span id="name">Player 1</span></div>
+  <div id="phase">Tap an empty sticker to place <span class="k">X</span></div>
+</div>
+
+<div id="arrows"></div>
+
+<div id="hint">
+  <span><b>Tap a sticker</b> — place your mark</span>
+  <span><b>Drag</b> — rotate the whole cube</span>
+  <span><b>Tap an arrow</b> — turn that row, column, or slice</span>
+</div>
+
+<div id="over">
+  <div class="card">
+    <div class="res" id="res">—</div>
+    <div class="sub" id="resSub"></div>
+    <button id="again">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   Rubik Tac Toe
+   - 3x3 cube, black body, white stickers (54).
+   - Turn = place a mark on an empty sticker, then turn one layer 90°.
+   - Win = 3 of one player's marks in a line (row/col/diag) on any face.
+   - Checked only after a rotation completes. Anyone can win (blunders count).
+   ============================================================ */
+
+const THREEjs = THREE;
+const SP = 1.05;            // spacing between cubie centers
+const CUBIE = 1.0;          // cubie cube size
+const STICK = 0.86;         // sticker plane size
+const ANG_PER_PX = (Math.PI/2)/140;   // drag pixels -> rotation angle
+const DRAG_THRESH = 6;      // px before a pointer-down becomes a drag
+
+// ---- Scene ----
+const stage = document.getElementById('stage');
+const scene = new THREEjs.Scene();
+const camera = new THREEjs.PerspectiveCamera(42, 1, 0.1, 100);
+camera.position.set(0,0,8.2);
+
+const renderer = new THREEjs.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+stage.appendChild(renderer.domElement);
+
+scene.add(new THREEjs.AmbientLight(0xffffff, 0.62));
+const key = new THREEjs.DirectionalLight(0xffffff, 0.95); key.position.set(5,7,6); scene.add(key);
+const fill = new THREEjs.DirectionalLight(0x99bbff, 0.35); fill.position.set(-6,-3,-4); scene.add(fill);
+const rim  = new THREEjs.DirectionalLight(0xffffff, 0.5); rim.position.set(0,2,-8); scene.add(rim);
+
+// ---- Galaxy background (starfield + nebula clouds) ----
+function softTex(){
+  const s=64,c=document.createElement('canvas'); c.width=c.height=s;
+  const g=c.getContext('2d');
+  const grd=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  grd.addColorStop(0,'rgba(255,255,255,1)');
+  grd.addColorStop(0.25,'rgba(255,255,255,0.85)');
+  grd.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grd; g.fillRect(0,0,s,s);
+  return new THREEjs.CanvasTexture(c);
+}
+const softT=softTex();
+const galaxy=new THREEjs.Group(); scene.add(galaxy);
+(function buildGalaxy(){
+  const N=1700, pos=new Float32Array(N*3), col=new Float32Array(N*3);
+  const palette=[[1,1,1],[0.68,0.78,1],[1,0.84,0.66],[0.86,0.72,1],[0.7,1,0.92]];
+  for(let i=0;i<N;i++){
+    const r=26+Math.random()*32;
+    const th=Math.random()*Math.PI*2;
+    const disk=Math.pow(Math.random(),2);          // bias stars toward a galactic plane
+    let y=(Math.random()*2-1)*r*(1-disk*0.72);
+    const rad=Math.sqrt(Math.max(0, r*r - y*y));
+    pos[i*3]=Math.cos(th)*rad; pos[i*3+1]=y; pos[i*3+2]=Math.sin(th)*rad;
+    const cc=palette[(Math.random()*palette.length)|0];
+    const b=0.45+Math.random()*0.55;
+    col[i*3]=cc[0]*b; col[i*3+1]=cc[1]*b; col[i*3+2]=cc[2]*b;
+  }
+  const geo=new THREEjs.BufferGeometry();
+  geo.setAttribute('position', new THREEjs.BufferAttribute(pos,3));
+  geo.setAttribute('color', new THREEjs.BufferAttribute(col,3));
+  const mat=new THREEjs.PointsMaterial({
+    size:0.55, map:softT, vertexColors:true, transparent:true,
+    depthWrite:false, blending:THREEjs.AdditiveBlending, sizeAttenuation:true
+  });
+  galaxy.add(new THREEjs.Points(geo,mat));
+
+  // soft nebula clouds
+  const clouds=[
+    [0x6a3cc4,-18, 8,-30, 62, 0.22],
+    [0x2a7bd6, 22,-6,-34, 72, 0.18],
+    [0xc23c8f,  6,14,-40, 56, 0.16],
+    [0x1f9e8a,-10,-12,-26, 46, 0.13],
+  ];
+  for(const [color,x,y,z,sc,op] of clouds){
+    const sp=new THREEjs.Sprite(new THREEjs.SpriteMaterial({
+      map:softT, color, transparent:true, opacity:op,
+      depthWrite:false, blending:THREEjs.AdditiveBlending
+    }));
+    sp.position.set(x,y,z); sp.scale.set(sc,sc,1);
+    galaxy.add(sp);
+  }
+})();
+
+const cubeGroup = new THREEjs.Group();
+scene.add(cubeGroup);
+// pleasant starting angle
+cubeGroup.rotation.x = -0.46;
+cubeGroup.rotation.y = 0.62;
+
+// ---- Materials & geometry ----
+const blackMat = new THREEjs.MeshPhongMaterial({color:0x14171c, shininess:18, specular:0x222831});
+const whiteMat = () => new THREEjs.MeshPhongMaterial({color:0xf4f6f8, shininess:42, specular:0x9aa3ad});
+const boxGeo = new THREEjs.BoxGeometry(CUBIE,CUBIE,CUBIE);
+const stickGeo = new THREEjs.PlaneGeometry(STICK,STICK);
+
+// Mark textures (X cyan, O amber)
+function markTexture(kind){
+  const s=160, c=document.createElement('canvas'); c.width=c.height=s;
+  const g=c.getContext('2d');
+  g.clearRect(0,0,s,s);
+  g.lineCap='round'; g.lineWidth=22;
+  if(kind==='X'){
+    g.strokeStyle='#16c4e0';
+    const m=42;
+    g.beginPath(); g.moveTo(m,m); g.lineTo(s-m,s-m); g.stroke();
+    g.beginPath(); g.moveTo(s-m,m); g.lineTo(m,s-m); g.stroke();
+  } else {
+    g.strokeStyle='#e89a14';
+    g.beginPath(); g.arc(s/2,s/2,(s/2)-40,0,Math.PI*2); g.stroke();
+  }
+  const t=new THREEjs.CanvasTexture(c); t.anisotropy=4; return t;
+}
+const TEX = { X:markTexture('X'), O:markTexture('O') };
+
+// Face local-normal definitions: axis index + sign + plane orientation
+const FACE_DEFS = [
+  {n:new THREEjs.Vector3( 1,0,0), rot:[0, Math.PI/2,0]},
+  {n:new THREEjs.Vector3(-1,0,0), rot:[0,-Math.PI/2,0]},
+  {n:new THREEjs.Vector3(0, 1,0), rot:[-Math.PI/2,0,0]},
+  {n:new THREEjs.Vector3(0,-1,0), rot:[ Math.PI/2,0,0]},
+  {n:new THREEjs.Vector3(0,0, 1), rot:[0,0,0]},
+  {n:new THREEjs.Vector3(0,0,-1), rot:[0,Math.PI,0]},
+];
+
+let cubies = [];     // black boxes (also occluders)
+let stickers = [];   // white planes (clickable)
+
+function buildCube(){
+  // clear
+  for(const m of cubies) cubeGroup.remove(m);
+  cubies=[]; stickers=[];
+  for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){
+    if(x===0&&y===0&&z===0) continue; // skip invisible core
+    const cubie = new THREEjs.Mesh(boxGeo, blackMat);
+    cubie.position.set(x*SP,y*SP,z*SP);
+    cubie.userData.isCubie = true;
+    cubeGroup.add(cubie);
+    cubies.push(cubie);
+    const coord = {x,y,z};
+    for(const f of FACE_DEFS){
+      const ax = f.n.x?x : f.n.y?y : z; // coordinate along this face axis
+      const sgn = f.n.x||f.n.y||f.n.z;
+      if(ax !== sgn) continue;          // only outer faces get a sticker
+      const st = new THREEjs.Mesh(stickGeo, whiteMat());
+      st.rotation.set(f.rot[0],f.rot[1],f.rot[2]);
+      st.position.copy(f.n).multiplyScalar(CUBIE/2 + 0.012);
+      st.userData = { isSticker:true, baseNormal:f.n.clone(), mark:null, markMesh:null };
+      cubie.add(st);
+      stickers.push(st);
+    }
+  }
+}
+buildCube();
+
+// ============================================================
+// Game state
+// ============================================================
+let player = 1;                 // 1 -> X, 2 -> O
+let phase = 'place';            // 'place' then 'rotate'
+let gameOver = false;
+const symbolOf = p => p===1 ? 'X' : 'O';
+
+function placeMark(st){
+  if(st.userData.mark) return false;
+  const sym = symbolOf(player);
+  const mat = new THREEjs.MeshBasicMaterial({map:TEX[sym], transparent:true, depthWrite:false});
+  const mk = new THREEjs.Mesh(new THREEjs.PlaneGeometry(STICK*0.82, STICK*0.82), mat);
+  mk.position.set(0,0,0.02);
+  st.add(mk);
+  st.userData.mark = sym;
+  st.userData.markMesh = mk;
+  return true;
+}
+
+// ============================================================
+// Win detection (orbit-independent: uses cube-local transforms)
+// ============================================================
+const _v = new THREEjs.Vector3();
+function roundAxis(v){
+  const ax=Math.abs(v.x), ay=Math.abs(v.y), az=Math.abs(v.z);
+  if(ax>=ay&&ax>=az) return {i:0, s:Math.sign(v.x)};
+  if(ay>=ax&&ay>=az) return {i:1, s:Math.sign(v.y)};
+  return {i:2, s:Math.sign(v.z)};
+}
+const LINES = [
+  [[0,0],[0,1],[0,2]],[[1,0],[1,1],[1,2]],[[2,0],[2,1],[2,2]], // rows
+  [[0,0],[1,0],[2,0]],[[0,1],[1,1],[2,1]],[[0,2],[1,2],[2,2]], // cols
+  [[0,0],[1,1],[2,2]],[[0,2],[1,1],[2,0]],                     // diagonals
+];
+const FACES = [{i:0,s:1},{i:0,s:-1},{i:1,s:1},{i:1,s:-1},{i:2,s:1},{i:2,s:-1}];
+
+function checkWinners(){
+  const winners = new Set();
+  for(const F of FACES){
+    const grid=[[null,null,null],[null,null,null],[null,null,null]];
+    for(const st of stickers){
+      const cubie = st.parent;
+      _v.copy(st.userData.baseNormal).applyQuaternion(cubie.quaternion);
+      const na = roundAxis(_v);
+      if(na.i!==F.i || na.s!==F.s) continue;
+      const px=Math.round(cubie.position.x/SP);
+      const py=Math.round(cubie.position.y/SP);
+      const pz=Math.round(cubie.position.z/SP);
+      let u,v;
+      if(F.i===0){u=py;v=pz;} else if(F.i===1){u=px;v=pz;} else {u=px;v=py;}
+      grid[u+1][v+1] = st.userData.mark;
+    }
+    for(const ln of LINES){
+      const a=grid[ln[0][0]][ln[0][1]];
+      if(!a) continue;
+      if(a===grid[ln[1][0]][ln[1][1]] && a===grid[ln[2][0]][ln[2][1]]) winners.add(a);
+    }
+  }
+  return winners;
+}
+
+function boardFull(){ return stickers.every(s=>s.userData.mark); }
+
+function resolveAfterMove(){
+  const w = checkWinners();
+  if(w.size>=2){ endGame('draw-sim'); return; }
+  if(w.has('X')){ endGame('X'); return; }
+  if(w.has('O')){ endGame('O'); return; }
+  if(boardFull()){ endGame('draw-full'); return; }
+  // next player's turn
+  player = player===1?2:1;
+  phase = 'place';
+  if(vsAI && player===2){ scheduleAI(); }
+  else { aiThinking=false; updateHUD(); }
+}
+
+// ============================================================
+// AI opponent (plays Player 2 / O)
+// ============================================================
+let vsAI=true, aiThinking=false;
+const MOVES=(()=>{const m=[];for(const axis of [0,1,2])for(const coord of [-1,1])for(const dir of [-1,1])m.push({axis,coord,dir});return m;})();
+
+function rotV(v,axis,dir){
+  const x=v[0],y=v[1],z=v[2];
+  if(axis===0) return dir>0?[x,-z,y]:[x,z,-y];
+  if(axis===1) return dir>0?[z,y,-x]:[-z,y,x];
+  return dir>0?[-y,x,z]:[y,-x,z];
+}
+function readBoard(){
+  const tmp=new THREEjs.Vector3();
+  return stickers.map(st=>{
+    const c=st.parent;
+    tmp.copy(st.userData.baseNormal).applyQuaternion(c.quaternion);
+    return {
+      mesh:st, mark:st.userData.mark,
+      pos:[Math.round(c.position.x/SP),Math.round(c.position.y/SP),Math.round(c.position.z/SP)],
+      normal:[Math.round(tmp.x),Math.round(tmp.y),Math.round(tmp.z)]
+    };
+  });
+}
+// Apply a placement (sym at index pi, or pi<0 for none) then a face turn mv.
+function applyCombo(states, pi, mv, sym){
+  const ns=new Array(states.length);
+  for(let i=0;i<states.length;i++){
+    let p=states[i].pos, n=states[i].normal;
+    if(mv && Math.round(p[mv.axis])===mv.coord){ p=rotV(p,mv.axis,mv.dir); n=rotV(n,mv.axis,mv.dir); }
+    ns[i]={pos:p, normal:n, mark: i===pi ? sym : states[i].mark, mesh:states[i].mesh};
+  }
+  return ns;
+}
+function gridsFrom(ns){
+  const grids=new Map();
+  for(let i=0;i<ns.length;i++){
+    const n=ns[i].normal;
+    const ax0=Math.abs(n[0]),ax1=Math.abs(n[1]),ax2=Math.abs(n[2]);
+    const ax = (ax0>=ax1&&ax0>=ax2)?0:(ax1>=ax2?1:2);
+    const s=n[ax]>0?1:0;
+    const key=ax*2+s;
+    let g=grids.get(key); if(!g){g=[[null,null,null],[null,null,null],[null,null,null]];grids.set(key,g);}
+    const p=ns[i].pos; let u,v;
+    if(ax===0){u=p[1];v=p[2];} else if(ax===1){u=p[0];v=p[2];} else {u=p[0];v=p[1];}
+    g[u+1][v+1]=ns[i].mark;
+  }
+  return grids;
+}
+function winnersFrom(ns){
+  const grids=gridsFrom(ns); const W={X:false,O:false};
+  for(const g of grids.values()){
+    for(const ln of LINES){
+      const a=g[ln[0][0]][ln[0][1]];
+      if(a && a===g[ln[1][0]][ln[1][1]] && a===g[ln[2][0]][ln[2][1]]) W[a]=true;
+    }
+  }
+  return W;
+}
+// Line-potential heuristic from O's perspective.
+function scoreFrom(ns){
+  const grids=gridsFrom(ns); let score=0;
+  for(const g of grids.values()){
+    for(const ln of LINES){
+      let o=0,x=0;
+      for(const c of ln){const m=g[c[0]][c[1]]; if(m==='O')o++; else if(m==='X')x++;}
+      if(x===0&&o>0) score += o===2?14:1;
+      if(o===0&&x>0) score -= x===2?14:1;
+    }
+  }
+  return score;
+}
+// Can `sym` win on their next turn from board ns (one placement + one move, pure win)?
+function canWinNext(ns, sym){
+  const other = sym==='X'?'O':'X';
+  for(let i=0;i<ns.length;i++){
+    if(ns[i].mark) continue;
+    for(const mv of MOVES){
+      const w=winnersFrom(applyCombo(ns, i, mv, sym));
+      if(w[sym] && !w[other]) return true;
+    }
+  }
+  return false;
+}
+function aiChoose(states){
+  const safe=[];
+  let drawFallback=null, anyFallback=null;
+  for(let i=0;i<states.length;i++){
+    if(states[i].mark) continue;
+    for(const mv of MOVES){
+      const ns=applyCombo(states, i, mv, 'O');
+      const w=winnersFrom(ns);
+      if(w.O && !w.X) return {mesh:states[i].mesh, axis:mv.axis, coord:mv.coord, dir:mv.dir}; // win now
+      if(w.X){ if(w.O && !drawFallback) drawFallback={mesh:states[i].mesh,...mv}; continue; } // hands X a win
+      if(!anyFallback) anyFallback={mesh:states[i].mesh,...mv};
+      safe.push({i, mv, ns, score:scoreFrom(ns)});
+    }
+  }
+  if(safe.length===0) return drawFallback || anyFallback;
+  // refine top candidates with a 1-ply opponent look-ahead
+  safe.sort((a,b)=>b.score-a.score);
+  const K=Math.min(28, safe.length);
+  let best=null;
+  for(let k=0;k<K;k++){
+    const cand=safe[k];
+    const xThreat=canWinNext(cand.ns,'X');
+    const adj=cand.score + (xThreat?-1000:0) + Math.random()*0.5;
+    if(!best || adj>best.adj) best={...cand, adj};
+  }
+  // if every top candidate lets X win, still take the least-bad of all safe
+  return {mesh:states[best.i].mesh, axis:best.mv.axis, coord:best.mv.coord, dir:best.mv.dir};
+}
+
+function scheduleAI(){
+  if(!vsAI || gameOver || player!==2){ return; }
+  aiThinking=true; phase='place'; updateHUD();
+  const g=gen;
+  setTimeout(()=>{ if(g===gen) aiPlace(g); }, 540);
+}
+function aiPlace(g){
+  if(g!==gen || gameOver || player!==2){ aiThinking=false; return; }
+  const states=readBoard();
+  const choice=aiChoose(states);
+  if(!choice){ aiThinking=false; return; }
+  placeMark(choice.mesh);            // player===2 -> places O
+  phase='rotate'; updateHUD();
+  setTimeout(()=>{ if(g===gen && !gameOver) doFaceTurn(choice.axis, choice.coord, choice.dir); }, 420);
+}
+let gen=0;
+
+// ============================================================
+// HUD
+// ============================================================
+const elGlyph=document.getElementById('glyph');
+const elName=document.getElementById('name');
+const elPhase=document.getElementById('phase');
+const elTurn=document.getElementById('turn');
+
+function updateHUD(){
+  const sym=symbolOf(player);
+  const col = sym==='X' ? getCSS('--x') : getCSS('--o');
+  elGlyph.textContent=sym;
+  elGlyph.style.background=col;
+  const isAI = vsAI && player===2;
+  elName.textContent = isAI ? 'Player 2 · AI' : 'Player '+player;
+  elName.style.color=col;
+  elTurn.style.boxShadow = `0 0 0 1px ${col}33, 0 8px 30px -12px ${col}55`;
+  if(isAI){
+    elPhase.innerHTML = phase==='place'
+      ? `<span class="k">Player 2</span> is thinking…`
+      : `<span class="k">Player 2</span> turns a layer…`;
+    return;
+  }
+  if(phase==='place'){
+    elPhase.innerHTML = `Tap an empty sticker to place <span class="k">${sym}</span>`;
+  } else {
+    elPhase.innerHTML = `Now press a <span class="k">turn button</span> to make your move`;
+  }
+  refreshMoves();
+}
+function flashPhase(msg){
+  elPhase.innerHTML = msg;
+}
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+const over=document.getElementById('over');
+const res=document.getElementById('res');
+const resSub=document.getElementById('resSub');
+function endGame(kind){
+  gameOver=true;
+  over.classList.add('show');
+  if(kind==='X'||kind==='O'){
+    const p = kind==='X'?'Player 1':'Player 2';
+    const col = kind==='X'?getCSS('--x'):getCSS('--o');
+    res.textContent = `${p} wins`;
+    res.style.color = col;
+    resSub.textContent = `three ${kind}'s in a row on a face`;
+  } else if(kind==='draw-sim'){
+    res.textContent='Draw'; res.style.color=getCSS('--ink');
+    resSub.textContent='both players lined up at once';
+  } else {
+    res.textContent='Draw'; res.style.color=getCSS('--ink');
+    resSub.textContent='no lines left to make';
+  }
+}
+
+function newGame(){
+  gen++;
+  // remove marks
+  for(const st of stickers){
+    if(st.userData.markMesh){ st.remove(st.userData.markMesh); }
+    st.userData.mark=null; st.userData.markMesh=null;
+  }
+  // resolve solved orientation (rebuild keeps it simple & exact)
+  buildCube();
+  player=1; phase='place'; gameOver=false; aiThinking=false;
+  over.classList.remove('show');
+  updateHUD();
+}
+document.getElementById('new').onclick=newGame;
+document.getElementById('again').onclick=newGame;
+const elMode=document.getElementById('mode');
+elMode.onclick=()=>{
+  if(aiThinking || anim) return;
+  vsAI=!vsAI;
+  elMode.innerHTML = vsAI ? 'VS&nbsp;AI' : '2&nbsp;PLAYERS';
+  updateHUD();
+  if(vsAI && player===2 && !gameOver && !aiThinking) scheduleAI();
+};
+
+// ============================================================
+// Input: orbit / place / layer-turn
+// ============================================================
+const raycaster=new THREEjs.Raycaster();
+const ndc=new THREEjs.Vector2();
+let rect=null;
+
+const pointer={
+  down:false, startX:0, startY:0, lastX:0, lastY:0, moved:false,
+  mode:null,          // 'sticker' | 'bg'
+  st:null,            // grabbed sticker (place or potential layer)
+  // layer-turn state
+  layer:{active:false, cubies:[], pivot:null, axisWorld:null, sHat:null, angle:0, decided:false}
+};
+let anim=null; // snap-tween {axisWorld, from, to, t, dur, onDone, pivot, cubies}
+
+function setNDC(e){
+  ndc.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  ndc.y = -((e.clientY-rect.top)/rect.height)*2+1;
+}
+function toScreen(world){
+  const v=world.clone().project(camera);
+  return new THREEjs.Vector2((v.x*0.5+0.5)*rect.width, (-v.y*0.5+0.5)*rect.height);
+}
+
+function onDown(e){
+  if(gameOver || anim || aiThinking) return;
+  rect=renderer.domElement.getBoundingClientRect();
+  setNDC(e);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects([...stickers, ...cubies], false);
+  pointer.down=true; pointer.moved=false;
+  pointer.startX=pointer.lastX=e.clientX;
+  pointer.startY=pointer.lastY=e.clientY;
+  pointer.layer.active=false; pointer.layer.decided=false; pointer.layer.cubies=[];
+  if(hits.length && hits[0].object.userData.isSticker){
+    pointer.mode='sticker';
+    pointer.st=hits[0].object;
+    pointer.grabPoint=hits[0].point.clone();
+  } else {
+    pointer.mode='bg'; pointer.st=null;
+  }
+  try{ renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
+}
+
+function orbit(dx,dy){
+  const k=0.011;
+  const qy=new THREEjs.Quaternion().setFromAxisAngle(new THREEjs.Vector3(0,1,0), dx*k);
+  const qx=new THREEjs.Quaternion().setFromAxisAngle(new THREEjs.Vector3(1,0,0), dy*k);
+  cubeGroup.quaternion.premultiply(qy).premultiply(qx);
+}
+
+function decideLayer(){
+  const st=pointer.st, cubie=st.parent;
+  // face axis (cube-local)
+  _v.copy(st.userData.baseNormal).applyQuaternion(cubie.quaternion);
+  const face=roundAxis(_v);
+  // candidate cube-local axes = the other two
+  const cands=[0,1,2].filter(i=>i!==face.i);
+  const pos=[Math.round(cubie.position.x/SP),Math.round(cubie.position.y/SP),Math.round(cubie.position.z/SP)];
+  const drag=new THREEjs.Vector2(pointer.lastX-pointer.startX, pointer.lastY-pointer.startY);
+  let best=null;
+  for(const i of cands){
+    const coord=pos[i];   // -1, 0, or 1 -> outer layers and middle slices are all turnable
+    const localAxis=new THREEjs.Vector3(i===0?1:0, i===1?1:0, i===2?1:0);
+    const worldAxis=localAxis.clone().applyQuaternion(cubeGroup.quaternion).normalize();
+    // induced screen direction at grab point for +rotation: v = axis x p (center at origin)
+    const pRel=pointer.grabPoint.clone();
+    const vel=new THREEjs.Vector3().crossVectors(worldAxis, pRel);
+    if(vel.lengthSq()<1e-9) continue;
+    const sa=toScreen(pointer.grabPoint);
+    const sb=toScreen(pointer.grabPoint.clone().add(vel.normalize().multiplyScalar(0.4)));
+    const sHat=new THREEjs.Vector2(sb.x-sa.x, sb.y-sa.y);
+    if(sHat.lengthSq()<1e-6) continue;
+    sHat.normalize();
+    const align=drag.x*sHat.x + drag.y*sHat.y;
+    if(!best || Math.abs(align)>Math.abs(best.align)){
+      best={i, coord, worldAxis, sHat, align};
+    }
+  }
+  if(!best) return false; // e.g. grabbed a face-center -> only slices possible
+  // gather layer cubies (same coord along axis i)
+  const layerCubies=cubies.filter(c=>{
+    const p=[Math.round(c.position.x/SP),Math.round(c.position.y/SP),Math.round(c.position.z/SP)];
+    return p[best.i]===best.coord;
+  });
+  const pivot=new THREEjs.Object3D();
+  scene.add(pivot);
+  for(const c of layerCubies) pivot.attach(c);
+  pointer.layer.active=true; pointer.layer.decided=true;
+  pointer.layer.cubies=layerCubies; pointer.layer.pivot=pivot;
+  pointer.layer.axisWorld=best.worldAxis; pointer.layer.sHat=best.sHat; pointer.layer.angle=0;
+  return true;
+}
+
+function onMove(e){
+  if(!pointer.down || gameOver || anim || aiThinking) return;
+  const dx=e.clientX-pointer.lastX, dy=e.clientY-pointer.lastY;
+  pointer.lastX=e.clientX; pointer.lastY=e.clientY;
+  const tot=Math.hypot(e.clientX-pointer.startX, e.clientY-pointer.startY);
+  if(tot>DRAG_THRESH) pointer.moved=true;
+
+  if(!pointer.moved) return;
+  // dragging always rotates the whole cube for inspection; layer turns use the buttons
+  orbit(dx,dy);
+}
+
+function commitTurn(cubieList, pivot, axisWorld, fromAngle, toAngle, realMove){
+  anim={
+    axisWorld, pivot, from:fromAngle, to:toAngle, t:0,
+    dur:Math.max(80, Math.abs(fromAngle-toAngle)/(Math.PI/2)*150),
+    onDone:()=>{
+      for(const c of cubieList){
+        cubeGroup.attach(c);
+        c.position.set(Math.round(c.position.x/SP)*SP, Math.round(c.position.y/SP)*SP, Math.round(c.position.z/SP)*SP);
+      }
+      scene.remove(pivot);
+      anim=null;
+      if(realMove){ resolveAfterMove(); }
+      else { flashPhase('Quarter-turn not completed — <span class="k">drag a full layer</span>'); }
+    }
+  };
+}
+
+// Programmatic face turn (used by the AI). axis 0/1/2, coord ±1, dir ±1.
+function doFaceTurn(axis, coord, dir){
+  const localAxis=new THREEjs.Vector3(axis===0?1:0, axis===1?1:0, axis===2?1:0);
+  const worldAxis=localAxis.applyQuaternion(cubeGroup.quaternion).normalize();
+  const layer=cubies.filter(c=>{
+    const comp = axis===0?c.position.x : axis===1?c.position.y : c.position.z;
+    return Math.round(comp/SP)===coord;
+  });
+  const pivot=new THREEjs.Object3D(); scene.add(pivot);
+  for(const c of layer) pivot.attach(c);
+  commitTurn(layer, pivot, worldAxis, 0, dir*Math.PI/2, true);
+}
+
+function onUp(e){
+  if(!pointer.down) return;
+  pointer.down=false;
+  try{ renderer.domElement.releasePointerCapture(e.pointerId);}catch(_){}
+  if(gameOver || anim){ return; }
+
+  // completing a layer turn?
+  if(pointer.layer.active){
+    const cur=pointer.layer.angle;
+    const Q=Math.PI/2;
+    let target;
+    if(cur>=Q/2) target=Q; else if(cur<=-Q/2) target=-Q; else target=0;
+    const L=pointer.layer;
+    L.active=false;
+    commitTurn(L.cubies.slice(), L.pivot, L.axisWorld, cur, target, target!==0);
+    L.cubies=[]; L.pivot=null;
+    return;
+  }
+
+  // a tap?
+  if(!pointer.moved){
+    if(phase==='place' && pointer.mode==='sticker' && pointer.st){
+      if(placeMark(pointer.st)){
+        phase='rotate';
+        updateHUD();
+      }
+    }
+  }
+}
+
+renderer.domElement.addEventListener('pointerdown', onDown);
+window.addEventListener('pointermove', onMove);
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', onUp);
+
+// ============================================================
+// Tap arrows around the cube (screen-relative row / column / slice turns)
+// ============================================================
+// Rotate the layer along the cube axis nearest world-axis Wref, at world-side `side`
+// (+1 / 0 / -1), turning so the front of that layer moves by `alphaDeg` about Wref.
+// Crucially we rotate about a REAL cube axis (the local axis in its current world
+// direction), so the result is always a valid cube state even with the view tilted.
+function turnScreen(Wref, side, alphaDeg){
+  if(gameOver || anim || aiThinking) return;
+  if(phase!=='rotate'){ flashPhase('Place your mark first — <span class="k">tap a sticker</span>'); return; }
+  const q=cubeGroup.quaternion;
+  const Wvec=new THREEjs.Vector3(Wref===0?1:0, Wref===1?1:0, Wref===2?1:0);
+  let a=0, best=0;
+  for(let i=0;i<3;i++){
+    const e=new THREEjs.Vector3(i===0?1:0,i===1?1:0,i===2?1:0).applyQuaternion(q);
+    const d=e.dot(Wvec);
+    if(Math.abs(d)>Math.abs(best)){ best=d; a=i; }
+  }
+  const sgn=Math.sign(best)||1;
+  const coord = side===0 ? 0 : side*sgn;
+  const eaWorld=new THREEjs.Vector3(a===0?1:0,a===1?1:0,a===2?1:0).applyQuaternion(q).normalize();
+  const theta=(alphaDeg*Math.PI/180)*sgn;        // express the intended world turn about the real cube axis
+  const layer=cubies.filter(c=>{
+    const comp = a===0?c.position.x : a===1?c.position.y : c.position.z;
+    return Math.round(comp/SP)===coord;
+  });
+  if(!layer.length) return;
+  const pivot=new THREEjs.Object3D(); scene.add(pivot);
+  for(const c of layer) pivot.attach(c);
+  commitTurn(layer, pivot, eaWorld, 0, theta, true);
+}
+
+// Arrow definitions: glyph, edge, lane(0..2), {Wref, side, alpha}
+// Columns (top ↑ / bottom ↓) rotate about world X; rows (left ← / right →) about world Y.
+const elArrows=document.getElementById('arrows');
+const ARROWS=[
+  // top edge: push each column up   (left/mid/right -> world x -1/0/+1)
+  {g:'↑', edge:'top',    lane:0, Wref:0, side:-1, a:-90},
+  {g:'↑', edge:'top',    lane:1, Wref:0, side: 0, a:-90, slice:true},
+  {g:'↑', edge:'top',    lane:2, Wref:0, side: 1, a:-90},
+  // bottom edge: push each column down
+  {g:'↓', edge:'bottom', lane:0, Wref:0, side:-1, a: 90},
+  {g:'↓', edge:'bottom', lane:1, Wref:0, side: 0, a: 90, slice:true},
+  {g:'↓', edge:'bottom', lane:2, Wref:0, side: 1, a: 90},
+  // left edge: pull each row left    (top/mid/bottom -> world y +1/0/-1)
+  {g:'←', edge:'left',   lane:0, Wref:1, side: 1, a:-90},
+  {g:'←', edge:'left',   lane:1, Wref:1, side: 0, a:-90, slice:true},
+  {g:'←', edge:'left',   lane:2, Wref:1, side:-1, a:-90},
+  // right edge: push each row right
+  {g:'→', edge:'right',  lane:0, Wref:1, side: 1, a: 90},
+  {g:'→', edge:'right',  lane:1, Wref:1, side: 0, a: 90, slice:true},
+  {g:'→', edge:'right',  lane:2, Wref:1, side:-1, a: 90},
+];
+function buildArrows(){
+  elArrows.innerHTML='';
+  for(const d of ARROWS){
+    const b=document.createElement('div');
+    b.className='arrow'+(d.slice?' slice':'');
+    b.textContent=d.g;
+    b.addEventListener('click', ()=>turnScreen(d.Wref, d.side, d.a));
+    d.el=b; elArrows.appendChild(b);
+  }
+  layoutArrows();
+}
+function layoutArrows(){
+  const w=stage.clientWidth, h=stage.clientHeight;
+  const cx=w/2, cy=h/2;
+  const half=0.27*Math.min(w,h);   // ~cube half-size on screen
+  const lane=half*0.66;            // offset of the three lanes
+  const gap=half+34;               // arrows sit just outside the cube
+  for(const d of ARROWS){
+    const off=(d.lane-1)*lane;     // -lane, 0, +lane
+    let x=cx, y=cy;
+    if(d.edge==='top'){    x=cx+off; y=cy-gap; }
+    if(d.edge==='bottom'){ x=cx+off; y=cy+gap; }
+    if(d.edge==='left'){   x=cx-gap; y=cy+off; }
+    if(d.edge==='right'){  x=cx+gap; y=cy+off; }
+    d.el.style.left=x+'px';
+    d.el.style.top =y+'px';
+  }
+}
+function refreshMoves(){
+  const on = !gameOver && !aiThinking && phase==='rotate' && !anim;
+  elArrows.classList.toggle('off', !on);
+}
+buildArrows();
+
+// ============================================================
+// Resize & render loop
+// ============================================================
+function resize(){
+  const w=stage.clientWidth, h=stage.clientHeight;
+  renderer.setSize(w,h);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  // pull camera back a touch on narrow screens
+  camera.position.z = w<560 ? 9.6 : 8.2;
+  camera.updateProjectionMatrix();
+  if(typeof layoutArrows==='function') layoutArrows();
+}
+window.addEventListener('resize', resize);
+resize();
+
+let prev=performance.now();
+function loop(now){
+  const dt=now-prev; prev=now;
+  if(anim){
+    anim.t=Math.min(1, anim.t + dt/anim.dur);
+    const e=1-Math.pow(1-anim.t,3); // easeOutCubic
+    const a=anim.from+(anim.to-anim.from)*e;
+    anim.pivot.quaternion.setFromAxisAngle(anim.axisWorld, a);
+    if(anim.t>=1){ const done=anim.onDone; anim.pivot.quaternion.setFromAxisAngle(anim.axisWorld, anim.to); done(); }
+  }
+  // ambient galaxy drift
+  galaxy.rotation.y += dt*0.000028;
+  galaxy.rotation.x = Math.sin(now*0.00002)*0.06;
+  refreshMoves();
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+updateHUD();
+requestAnimationFrame(loop);
+</script>
